@@ -1,0 +1,12 @@
+===
+SCHEMA:
+CREATE TABLE Users (id INT, name TEXT, join_date DATE);
+CREATE TABLE Orders (id INT, user_id INT, amount FLOAT, status TEXT);
+QUESTION:
+Find the names of users who have spent more than 500 in total.
+===
+SCHEMA:
+CREATE TABLE Doctors (id INT, name TEXT, specialty TEXT);
+CREATE TABLE Appointments (id INT, doctor_id INT, patient_name TEXT, date DATE);
+QUESTION:
+List all doctors specialized in 'Cardiology' who have appointments tomorrow.

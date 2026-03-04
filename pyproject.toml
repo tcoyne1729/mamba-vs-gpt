@@ -1,0 +1,18 @@
+[project]
+name = "mamba-vs-gpt"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "accelerate>=1.12.0",
+    "bitsandbytes>=0.49.2",
+    "datasets>=4.6.1",
+    "peft>=0.18.1",
+    # assume pre-installed on linux
+    "torch>=2.10.0; sys_platform == 'darwin'",
+    "torchvision>=0.25.0; sys_platform == 'darwin'",
+    "transformers>=5.2.0",
+    "trl>=0.29.0",
+    "wandb>=0.25.0",
+]
