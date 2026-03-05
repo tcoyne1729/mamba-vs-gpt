@@ -92,7 +92,7 @@ training_arguments = SFTConfig(
     save_strategy="steps",      # Or "epoch"
     save_steps=100,             # Save every 100 steps
     save_total_limit=2,         # Only keep the 2 most recent checkpoints
-    max_seq_length=2048, # Adjust based on how large your schemas are
+    max_length=2048, # Adjust based on how large your schemas are
 )
 
 # 8. Initialize Trainer
