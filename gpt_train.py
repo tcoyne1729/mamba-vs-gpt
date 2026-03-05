@@ -55,7 +55,7 @@ model = AutoModelForCausalLM.from_pretrained(
     quantization_config=bnb_config,
     device_map="auto",
     trust_remote_code=True,
-    token=hf_token
+    token=hf_token,
 )
 model.config.use_cache = False # Required for training
 
@@ -94,8 +94,8 @@ training_arguments = SFTConfig(
     save_steps=100,             # Save every 100 steps
     save_total_limit=2,         # Only keep the 2 most recent checkpoints
     max_length=2048, # Adjust based on how large your schemas are
-    packing=True,
-    dataset_num_proc=os.cpu_count(), # Use all available CPU cores
+    # packing=True,
+    dataset_num_proc=min(os.cpu_count(), 32) # Use all available CPU cores
 )
 
 # 8. Initialize Trainer
