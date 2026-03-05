@@ -101,7 +101,7 @@ trainer = SFTTrainer(
     train_dataset=dataset,
     peft_config=peft_config,
     formatting_func=formatting_prompts_func,
-    tokenizer=tokenizer,
+    # tokenizer=tokenizer,
     args=training_arguments,
 )
 

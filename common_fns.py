@@ -1,5 +1,6 @@
 
-def formatting_prompts_func(example):
+def formatting_prompts_func(example: dict):
+    print(list(example.keys()))
     output_texts = []
     for i in range(len(example['question'])):
         text = (
