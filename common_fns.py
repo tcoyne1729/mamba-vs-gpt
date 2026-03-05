@@ -5,9 +5,9 @@ def formatting_prompts_func(example: dict):
     for i in range(len(example['question'])):
         text = (
             "Generate SQL for this question."
-            f"### schema\n{example['context'][i]}\n"
+            f"### schema\n{example['schema'][i]}\n"
             f"### question\n{example['question'][i]}\n"
-            f"### sql\n{example['answer'][i]}"
+            f"### sql\n{example['query'][i]}"
         )
         output_texts.append(text)
     return output_texts
