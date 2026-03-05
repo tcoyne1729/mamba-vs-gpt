@@ -96,7 +96,8 @@ training_arguments = SFTConfig(
     max_length=2048, # Adjust based on how large your schemas are
     # packing=True,
     dataset_num_proc=min(os.cpu_count(), 32), # Use all available CPU cores
-    token=hf_token,
+    hub_token=hf_token,
+    hub_private_repo=True,
     hub_model_id=f"tcoyne1729/{project_name}"
 )
 
