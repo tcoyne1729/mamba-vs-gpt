@@ -60,7 +60,7 @@ model = AutoModelForCausalLM.from_pretrained(
 model.config.use_cache = False # Required for training
 
 # 5. Load Tokenizer
-tokenizer = AutoTokenizer.from_pretrained(model_id)
+tokenizer = AutoTokenizer.from_pretrained(model_id, token=hf_token)
 tokenizer.pad_token = tokenizer.eos_token
 tokenizer.padding_side = "right"
 
@@ -95,7 +95,9 @@ training_arguments = SFTConfig(
     save_total_limit=2,         # Only keep the 2 most recent checkpoints
     max_length=2048, # Adjust based on how large your schemas are
     # packing=True,
-    dataset_num_proc=min(os.cpu_count(), 32) # Use all available CPU cores
+    dataset_num_proc=min(os.cpu_count(), 32), # Use all available CPU cores
+    hub_token=hf_token,
+    hub_model_id=f"tcoyne1729/{project_name}"
 )
 
 # 8. Initialize Trainer
