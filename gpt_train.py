@@ -4,14 +4,15 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
-    TrainingArguments,
+    # TrainingArguments,
 )
 from peft import LoraConfig
-from trl import SFTTrainer
+from trl import SFTTrainer, SFTConfig
 from common_fns import formatting_prompts_func
 import wandb
 from datetime import datetime
 import os
+
 
 # 1. Configuration
 model_id = "mistralai/Mistral-7B-v0.3" # Excellent base model for SQL tasks
@@ -23,10 +24,10 @@ run_id = os.environ.get("run_id", datetime.now().strftime("%Y%m%d%H%M"))
 run_type = os.environ.get('dev', "prod")
 lora_r = 16
 
-if not os.getenv("WANDB_API_KEY"):
+if not (wandb_key := os.getenv("WANDB_API_KEY")):
     raise Exception("no WANDB_API_KEY")
 
-if not os.getenv("HF_TOKEN"):
+if not (hf_token := os.getenv("HF_TOKEN")):
     raise Exception("HF_TOKEN not found. Gated models may not load.")
 
 wandb.init(
@@ -39,7 +40,7 @@ wandb.init(
 )
 
 # 2. Load Dataset
-dataset = load_dataset(dataset_name, split="train")
+dataset = load_dataset(dataset_name, split="train", token=hf_token)
 
 # 4. Load Model with 4-bit Quantization (to fit on 1 GPU)
 bnb_config = BitsAndBytesConfig(
@@ -73,7 +74,7 @@ peft_config = LoraConfig(
 )
 
 # 7. Training Arguments
-training_arguments = TrainingArguments(
+training_arguments = SFTConfig(
     output_dir=output_dir,
     per_device_train_batch_size=4,
     gradient_accumulation_steps=4,
