@@ -1,18 +1,20 @@
+import os
+from datetime import datetime
+from pathlib import Path
+
 import torch
+import wandb
 from datasets import load_dataset
+from sql_eval import SQLEvalCallback, PerplexityCallback
+from peft import LoraConfig
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
-    # TrainingArguments,
 )
-from peft import LoraConfig
-from trl import SFTTrainer, SFTConfig
-from common_fns import formatting_prompts_func
-import wandb
-from datetime import datetime
-import os
+from trl import SFTConfig, SFTTrainer
 
+from common_fns import formatting_prompts_func
 
 # 1. Configuration
 model_id = "mistralai/Mistral-7B-v0.3" # Excellent base model for SQL tasks
@@ -20,8 +22,16 @@ dataset_name = "trl-lab/SQaLe-text-to-SQL-dataset"
 output_dir = "./mistral-sqale-finetuned"
 project_name = "mistral-7b-sql-finetuning"
 
-run_id = os.environ.get("run_id", datetime.now().strftime("%Y%m%d%H%M"))
+run_id_path = ".run-id"
+if not Path(run_id_path).exists():
+    run_id = os.environ.get("run_id", datetime.now().strftime("%Y%m%d%H%M"))
+    with open(run_id_path, "w") as f:
+        f.write(run_id)
+with open(run_id_path, "r") as f:
+    run_id = f.read()
 run_type = os.environ.get('dev', "prod")
+
+lr = 5e-5
 lora_r = 16
 
 if not (wandb_key := os.getenv("WANDB_API_KEY")):
@@ -40,7 +50,9 @@ wandb.init(
 )
 
 # 2. Load Dataset
-dataset = load_dataset(dataset_name, split="train", token=hf_token)
+raw_datasets = load_dataset(dataset_name, token=hf_token)
+train_dataset = raw_datasets["train"]
+eval_dataset = raw_datasets["validation"]
 
 # 4. Load Model with 4-bit Quantization (to fit on 1 GPU)
 bnb_config = BitsAndBytesConfig(
@@ -54,6 +66,7 @@ model = AutoModelForCausalLM.from_pretrained(
     model_id,
     quantization_config=bnb_config,
     device_map="auto",
+    attn_implementation="sdpa",  # using this over flash-attention-2 because of install headaches.
     trust_remote_code=True,
     token=hf_token,
 )
@@ -68,7 +81,7 @@ tokenizer.padding_side = "right"
 peft_config = LoraConfig(
     r=lora_r,
     lora_alpha=32,
-    target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj"],
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
     lora_dropout=0.05,
     bias="none",
     task_type="CAUSAL_LM",
@@ -77,10 +90,10 @@ peft_config = LoraConfig(
 # 7. Training Arguments
 training_arguments = SFTConfig(
     output_dir=output_dir,
-    per_device_train_batch_size=4,
+    per_device_train_batch_size=16,
     gradient_accumulation_steps=4,
     optim="paged_adamw_32bit",
-    learning_rate=2e-4,
+    learning_rate=lr,
     lr_scheduler_type="cosine",
     logging_steps=10,
     num_train_epochs=1, # Adjust based on data size/time
@@ -94,20 +107,26 @@ training_arguments = SFTConfig(
     save_steps=100,             # Save every 100 steps
     save_total_limit=2,         # Only keep the 2 most recent checkpoints
     max_length=2048, # Adjust based on how large your schemas are
-    # packing=True,
+    packing=True,
     dataset_num_proc=min(os.cpu_count(), 32), # Use all available CPU cores
-    # hub_token=hf_token,
-    # hub_private_repo=True,
-    # hub_model_id=f"tcoyne1729/{project_name}"
+    # eval
+    eval_strategy="steps",
+    eval_steps=50,
+    per_device_eval_batch_size=8,
+    gradient_checkpointing=True,
 )
 
 # 8. Initialize Trainer
+sql_callback = SQLEvalCallback(model, tokenizer, eval_dataset, formatting_prompts_func)
+perplexity_callback = PerplexityCallback()
+
 trainer = SFTTrainer(
     model=model,
-    train_dataset=dataset,
+    train_dataset=train_dataset,
+    eval_dataset=eval_dataset,
     peft_config=peft_config,
     formatting_func=formatting_prompts_func,
-    # tokenizer=tokenizer,
+    callbacks=[sql_callback, perplexity_callback],
     args=training_arguments,
 )
 
