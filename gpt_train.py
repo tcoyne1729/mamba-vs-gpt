@@ -53,8 +53,8 @@ wandb.init(
 raw_datasets = load_dataset(dataset_name, token=hf_token)
 split_datasets = raw_datasets["train"].train_test_split(test_size=0.05, seed=42)
 
-train_dataset = raw_datasets["train"]
-eval_dataset = raw_datasets["test"]
+train_dataset = split_datasets["train"]
+eval_dataset = split_datasets["test"]
 
 # 4. Load Model with 4-bit Quantization (to fit on 1 GPU)
 bnb_config = BitsAndBytesConfig(
