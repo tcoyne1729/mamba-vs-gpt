@@ -2,7 +2,7 @@
 
 set -e
 
-git clone https://github.com/tcoyne1729/mamba-vs-gpt.git .
+git clone https://github.com/tcoyne1729/mamba-vs-gpt.git
 
 # python
 
