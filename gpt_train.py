@@ -67,7 +67,7 @@ bnb_config = BitsAndBytesConfig(
 model = AutoModelForCausalLM.from_pretrained(
     model_id,
     quantization_config=bnb_config,
-    device_id=0,
+    device_map={"": 0}, # This forces EVERYTHING onto GPU 0
     # device_map="auto",
     attn_implementation="sdpa",  # using this over flash-attention-2 because of install headaches.
     trust_remote_code=True,
