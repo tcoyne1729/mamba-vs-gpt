@@ -67,7 +67,8 @@ bnb_config = BitsAndBytesConfig(
 model = AutoModelForCausalLM.from_pretrained(
     model_id,
     quantization_config=bnb_config,
-    device_map="auto",
+    device_id=0,
+    # device_map="auto",
     attn_implementation="sdpa",  # using this over flash-attention-2 because of install headaches.
     trust_remote_code=True,
     token=hf_token,
@@ -138,6 +139,7 @@ last_checkpoint = None
 if os.path.exists(output_dir) and os.listdir(output_dir):
     last_checkpoint = True # Trainer will find the latest one automatically
 
+print(model.hf_device_map)
 print(f"Starting training (Resume: {last_checkpoint})...")
 trainer.train(resume_from_checkpoint=last_checkpoint)
 
