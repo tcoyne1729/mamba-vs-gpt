@@ -92,7 +92,7 @@ peft_config = LoraConfig(
 # 7. Training Arguments
 training_arguments = SFTConfig(
     output_dir=output_dir,
-    per_device_train_batch_size=16,
+    per_device_train_batch_size=8,
     gradient_accumulation_steps=4,
     optim="paged_adamw_32bit",
     learning_rate=lr,
