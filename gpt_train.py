@@ -1,10 +1,11 @@
 import os
+import hashlib
 from datetime import datetime
 from pathlib import Path
 
 import torch
 import wandb
-from datasets import load_dataset
+from datasets import load_dataset, load_from_disk
 from sql_eval import SQLEvalCallback, PerplexityCallback
 from peft import LoraConfig
 from transformers import (
@@ -56,6 +57,37 @@ split_datasets = raw_datasets["train"].train_test_split(test_size=0.05, seed=42)
 train_dataset = split_datasets["train"]
 eval_dataset = split_datasets["test"]
 
+# 5. Load Tokenizer
+tokenizer = AutoTokenizer.from_pretrained(model_id, token=hf_token)
+tokenizer.pad_token = tokenizer.eos_token
+tokenizer.padding_side = "right"
+
+# pre compute and cache data
+# Create a cache key based on model and dataset so cache invalidates if you change either
+cache_key = hashlib.md5(f"{model_id}{dataset_name}".encode()).hexdigest()[:8]
+cache_dir = Path(f".cache/tokenized_{cache_key}")
+
+def tokenize_dataset(dataset, split_name):
+    cache_path = cache_dir / split_name
+    if cache_path.exists():
+        print(f"Loading {split_name} from cache...")
+        return load_from_disk(str(cache_path))  # ← fix
+    
+    print(f"Tokenizing {split_name}...")
+    tokenized = dataset.map(
+        lambda x: tokenizer(formatting_prompts_func(x), truncation=True, max_length=2048),
+        batched=True,
+        num_proc=4,
+        remove_columns=dataset.column_names,
+    )
+    tokenized.save_to_disk(str(cache_path))
+    print(f"Cached {split_name} to {cache_path}")
+    return tokenized
+
+# Do this AFTER tokenizer is loaded, BEFORE trainer init
+train_dataset = tokenize_dataset(split_datasets["train"], "train")
+eval_dataset = tokenize_dataset(split_datasets["test"], "eval")
+
 # 4. Load Model with 4-bit Quantization (to fit on 1 GPU)
 bnb_config = BitsAndBytesConfig(
     load_in_4bit=True,
@@ -74,11 +106,6 @@ model = AutoModelForCausalLM.from_pretrained(
     token=hf_token,
 )
 model.config.use_cache = False # Required for training
-
-# 5. Load Tokenizer
-tokenizer = AutoTokenizer.from_pretrained(model_id, token=hf_token)
-tokenizer.pad_token = tokenizer.eos_token
-tokenizer.padding_side = "right"
 
 # 6. LoRA Configuration (PEFT)
 peft_config = LoraConfig(
@@ -111,7 +138,9 @@ training_arguments = SFTConfig(
     save_total_limit=2,         # Only keep the 2 most recent checkpoints
     max_length=2048, # Adjust based on how large your schemas are
     packing=True,
-    dataset_num_proc=min(os.cpu_count(), 32), # Use all available CPU cores
+    dataloader_num_workers=4,
+    dataloader_pin_memory=True,
+    dataset_num_proc=4,
     # eval
     eval_strategy="steps",
     eval_steps=50,
