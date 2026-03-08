@@ -1,10 +1,13 @@
+import math
+
+import sqlglot
 import torch
 import wandb
-import math
 from transformers import TrainerCallback
 
+
 class SQLEvalCallback(TrainerCallback):
-    def __init__(self, model, tokenizer, eval_dataset, formatting_func, num_samples=5):
+    def __init__(self, model, tokenizer, eval_dataset, formatting_func, num_samples=50):
         self.model = model
         self.tokenizer = tokenizer
         self.eval_dataset = eval_dataset
@@ -13,45 +16,58 @@ class SQLEvalCallback(TrainerCallback):
 
     def on_evaluate(self, args, state, control, **kwargs):
         self.model.eval()
-        success_count = 0
         
-        print(f"\n--- Running Custom SQL Eval (Step {state.global_step}) ---")
+        valid_sql = 0
+        exact_match = 0
+        total = min(self.num_samples, len(self.eval_dataset))
         
-        for i in range(self.num_samples):
-            # Grab a sample and format it
+        print(f"\n--- SQL Eval (Step {state.global_step}) ---")
+        
+        for i in range(total):
             sample = self.eval_dataset[i]
-            # Use your existing formatting function
-            full_prompt = self.formatting_func(sample)[0] 
-            
-            # We want to prompt the model with everything EXCEPT the expected SQL
-            # This assumes your prompt ends with something like "SQL:"
-            input_text = full_prompt.split("SQL:")[0] + "SQL:"
+            full_prompt = self.formatting_func(sample)
+            input_text = full_prompt.split("### sql\n")[0] + "### sql\n"
             
             inputs = self.tokenizer(input_text, return_tensors="pt").to("cuda")
             
             with torch.no_grad():
                 outputs = self.model.generate(
-                    **inputs, 
-                    max_new_tokens=64, 
-                    pad_token_id=self.tokenizer.eos_token_id
+                    **inputs,
+                    max_new_tokens=128,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                    temperature=0.1,  # near-greedy for eval
+                    do_sample=False,
                 )
             
             prediction = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-            generated_sql = prediction.split("SQL:")[-1].strip()
+            generated_sql = prediction.split("### sql\n")[-1].strip()
+            expected_sql = sample['query'].strip()
             
-            # Simple heuristic check: Does it start with SELECT? 
-            # (In a real run, you'd use a SQL parser like `sqlglot`)
-            if "SELECT" in generated_sql.upper() and ";" in generated_sql:
-                success_count += 1
-                
-            if i == 0: # Print the first one for a quick visual check
-                print(f"Target: {sample['answer'] if 'answer' in sample else 'N/A'}")
+            # 1. Syntax validity via sqlglot
+            try:
+                sqlglot.parse(generated_sql)
+                valid_sql += 1
+            except:
+                pass
+            
+            # 2. Exact match (normalised)
+            if generated_sql.lower().strip() == expected_sql.lower().strip():
+                exact_match += 1
+            
+            if i == 0:
+                print(f"Expected: {expected_sql}")
                 print(f"Generated: {generated_sql}\n")
-
-        # Log to WandB
-        valid_rate = success_count / self.num_samples
-        wandb.log({"eval/sql_validity_rate": valid_rate}, step=state.global_step)
-        print(f"SQL Validity Rate: {valid_rate * 100}%")
+        
+        validity_rate = valid_sql / total
+        exact_match_rate = exact_match / total
+        
+        wandb.log({
+            "eval/sql_validity_rate": validity_rate,
+            "eval/exact_match_rate": exact_match_rate,
+            "eval/num_samples": total,
+        }, step=state.global_step)
+        
+        print(f"Validity: {validity_rate*100:.1f}% | Exact Match: {exact_match_rate*100:.1f}%")
         self.model.train()
 
 class PerplexityCallback(TrainerCallback):

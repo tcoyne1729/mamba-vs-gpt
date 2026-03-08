@@ -55,6 +55,7 @@ split_datasets = raw_datasets["train"].train_test_split(test_size=0.05, seed=42)
 
 train_dataset = split_datasets["train"]
 eval_dataset = split_datasets["test"]
+eval_dataset = eval_dataset.select(range(50))  # just use 50 examples for speed
 
 # 5. Load Tokenizer
 tokenizer = AutoTokenizer.from_pretrained(model_id, token=hf_token)
