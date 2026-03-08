@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # run on the instance with this command:
-# curl -fsSL https://raw.githubusercontent.com/tcoyne1729/mamba-vs-gpt/main/setup.sh | bash
+# curl -fsSL https://raw.githubusercontent.com/tcoyne1729/mamba-vs-gpt/refs/heads/main/runners/setup.sh | bash
 
 set -e
 
 git clone https://github.com/tcoyne1729/mamba-vs-gpt.git
-cd mamba-vs-gpt
+cd mamba-vs-gpt/
 
 # python
 
