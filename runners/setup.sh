@@ -17,14 +17,9 @@ fi
 git clone https://github.com/tcoyne1729/mamba-vs-gpt.git
 cd mamba-vs-gpt/
 
-# 3. Python env + main dependencies
+# 3. Python env + all dependencies (including flash-attn)
 uv venv --python 3.12
 uv sync
-
-# 4. flash-attn must be installed with --no-build-isolation so it can find
-#    the already-installed torch during its C++ extension build.
-#    If uv sync already found a pre-built wheel this is a fast no-op.
-uv pip install flash-attn --no-build-isolation
 
 chmod +x ./runners/*.sh
 
