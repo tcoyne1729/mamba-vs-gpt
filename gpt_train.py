@@ -72,7 +72,7 @@ bnb_config = BitsAndBytesConfig(
 model = AutoModelForCausalLM.from_pretrained(
     model_id,
     # quantization_config=bnb_config,
-    torch_dtype=torch.bfloat16,
+    dtype=torch.bfloat16,
     device_map={"": 0}, # This forces EVERYTHING onto GPU 0
     # device_map="auto",
     attn_implementation="sdpa",  # using this over flash-attention-2 because of install headaches.
@@ -94,8 +94,8 @@ peft_config = LoraConfig(
 # 7. Training Arguments
 training_arguments = SFTConfig(
     output_dir=output_dir,
-    per_device_train_batch_size=16,
-    gradient_accumulation_steps=2,
+    per_device_train_batch_size=8,
+    gradient_accumulation_steps=4,
     optim="paged_adamw_32bit",
     learning_rate=lr,
     lr_scheduler_type="cosine",
