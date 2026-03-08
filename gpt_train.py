@@ -136,6 +136,12 @@ trainer = SFTTrainer(
     args=training_arguments,
 )
 
+# debug
+lengths = [len(tokenizer.encode(formatting_prompts_func(x))) for x in train_dataset.select(range(200))]
+print(f"max: {max(lengths)}")
+print(f"mean: {int(sum(lengths)/len(lengths))}")
+print(f"p95: {sorted(lengths)[int(len(lengths)*0.95)]}")
+
 # 9. Start Training
 print("Checking for checkpoints...")
 last_checkpoint = None
