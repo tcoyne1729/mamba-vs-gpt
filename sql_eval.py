@@ -1,4 +1,5 @@
 import math
+import time
 
 import sqlglot
 import torch
@@ -72,9 +73,54 @@ class SQLEvalCallback(TrainerCallback):
 
 class PerplexityCallback(TrainerCallback):
     def on_evaluate(self, args, state, control, metrics, **kwargs):
-        # The 'metrics' dict contains the results of the evaluation
         if "eval_loss" in metrics:
             perplexity = math.exp(metrics["eval_loss"])
-            # Log to WandB
             wandb.log({"eval/perplexity": perplexity}, step=state.global_step)
             print(f"Validation Perplexity: {perplexity:.2f}")
+
+
+class TrainingMetricsCallback(TrainerCallback):
+    """Logs VRAM usage, tokens/sec throughput, and wall-clock time to wandb."""
+
+    def __init__(self, batch_size: int, gradient_accumulation_steps: int, max_length: int):
+        self.batch_size = batch_size
+        self.gradient_accumulation_steps = gradient_accumulation_steps
+        self.max_length = max_length
+        self._step_start_time: float | None = None
+        self._train_start_time: float | None = None
+
+    def on_train_begin(self, args, state, control, **kwargs):
+        self._train_start_time = time.time()
+        wandb.run.summary["train_start_timestamp"] = self._train_start_time
+
+    def on_step_begin(self, args, state, control, **kwargs):
+        self._step_start_time = time.time()
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if not state.is_world_process_zero:
+            return
+        metrics = {}
+
+        # VRAM
+        if torch.cuda.is_available():
+            vram_gb = torch.cuda.max_memory_allocated() / 1e9
+            metrics["train/vram_gb"] = vram_gb
+
+        # Tokens/sec — estimated from step time and effective tokens per step
+        if self._step_start_time is not None:
+            elapsed = time.time() - self._step_start_time
+            if elapsed > 0:
+                tokens_per_step = self.batch_size * self.gradient_accumulation_steps * self.max_length
+                metrics["train/tokens_per_sec"] = tokens_per_step / elapsed
+
+        # Wall-clock elapsed
+        if self._train_start_time is not None:
+            metrics["train/elapsed_hours"] = (time.time() - self._train_start_time) / 3600
+
+        if metrics:
+            wandb.log(metrics, step=state.global_step)
+
+    def on_save(self, args, state, control, **kwargs):
+        if self._train_start_time is not None:
+            elapsed_h = (time.time() - self._train_start_time) / 3600
+            wandb.run.summary[f"checkpoint_step_{state.global_step}_elapsed_hours"] = elapsed_h

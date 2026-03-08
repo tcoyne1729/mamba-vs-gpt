@@ -8,6 +8,7 @@ dependencies = [
   "accelerate>=1.13.0",
   "bitsandbytes>=0.49.2",
   "datasets>=4.6.1",
+  "flash-attn>=2.7.0",
   "huggingface-hub>=1.6.0",
   "peft>=0.18.1",
   "sqlglot>=29.0.1",
@@ -19,10 +20,10 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-torch = { index = "pytorch-cu130" }
-torchvision = { index = "pytorch-cu130" }
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
 
 [[tool.uv.index]]
-name = "pytorch-cu130"
-url = "https://download.pytorch.org/whl/cu130"
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
 explicit = true

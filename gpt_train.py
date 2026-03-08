@@ -5,13 +5,14 @@ from pathlib import Path
 import torch
 import wandb
 from datasets import load_dataset
-from sql_eval import SQLEvalCallback, PerplexityCallback
+from sql_eval import SQLEvalCallback, PerplexityCallback, TrainingMetricsCallback
 from peft import LoraConfig
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
 )
+from transformers.trainer_utils import get_last_checkpoint
 from trl import SFTConfig, SFTTrainer
 
 from common_fns import formatting_prompts_func
@@ -29,10 +30,19 @@ if not Path(run_id_path).exists():
         f.write(run_id)
 with open(run_id_path, "r") as f:
     run_id = f.read()
-run_type = os.environ.get('dev', "prod")
+dev_run = bool(os.environ.get('DEV_RUN'))
+run_type = "dev" if dev_run else "prod"
 
 lr = 5e-5
 lora_r = 16
+n_distractors = 5
+batch_size = 8
+gradient_accumulation_steps = 4
+max_length = 2048
+
+if dev_run:
+    print("=== DEV RUN MODE ===")
+    print("max_steps=200, eval_steps=50, logging_steps=10, DEBUG_LENGTHS=1")
 
 if not (wandb_key := os.getenv("WANDB_API_KEY")):
     raise Exception("no WANDB_API_KEY")
@@ -41,11 +51,20 @@ if not (hf_token := os.getenv("HF_TOKEN")):
     raise Exception("HF_TOKEN not found. Gated models may not load.")
 
 wandb.init(
-    project=project_name, 
+    project=project_name,
     name=f"mistral-v0.3-sqale-{run_id}-{run_type}",
     config={
-        "lora_r": lora_r,
         "model": model_id,
+        "lora_r": lora_r,
+        "lr": lr,
+        "batch_size": batch_size,
+        "gradient_accumulation_steps": gradient_accumulation_steps,
+        "effective_batch_size": batch_size * gradient_accumulation_steps,
+        "max_length": max_length,
+        "n_distractors": n_distractors,
+        "quantization": "nf4-4bit",
+        "attn_implementation": "flash_attention_2",
+        "packing": False,
     }
 )
 
@@ -72,11 +91,10 @@ bnb_config = BitsAndBytesConfig(
 
 model = AutoModelForCausalLM.from_pretrained(
     model_id,
-    # quantization_config=bnb_config,
-    dtype=torch.bfloat16,
+    quantization_config=bnb_config,
+    torch_dtype=torch.bfloat16,
     device_map={"": 0}, # This forces EVERYTHING onto GPU 0
-    # device_map="auto",
-    attn_implementation="sdpa",  # using this over flash-attention-2 because of install headaches.
+    attn_implementation="flash_attention_2",
     trust_remote_code=True,
     token=hf_token,
 )
@@ -95,30 +113,30 @@ peft_config = LoraConfig(
 # 7. Training Arguments
 training_arguments = SFTConfig(
     output_dir=output_dir,
-    per_device_train_batch_size=8,
-    gradient_accumulation_steps=4,
+    per_device_train_batch_size=batch_size,
+    gradient_accumulation_steps=gradient_accumulation_steps,
     optim="paged_adamw_32bit",
     learning_rate=lr,
     lr_scheduler_type="cosine",
     logging_steps=10,
-    num_train_epochs=1, # Adjust based on data size/time
-    max_steps=-1,
+    num_train_epochs=1,
+    max_steps=200 if dev_run else -1,
     fp16=False,
-    bf16=True, # Use bf16 if using A100/3090/4090
+    bf16=True,
     push_to_hub=True,
     report_to="wandb",
-    hub_strategy="checkpoint",  # Pushes the latest checkpoint to HF
-    save_strategy="steps",      # Or "epoch"
-    save_steps=100,             # Save every 100 steps
-    save_total_limit=2,         # Only keep the 2 most recent checkpoints
-    max_length=2048, # Adjust based on how large your schemas are
-    packing=False,
+    hub_strategy="all_checkpoints",  # Preserves all checkpoints on HF Hub
+    save_strategy="steps",
+    save_steps=500,
+    save_total_limit=10,
+    max_length=max_length,
+    packing=False,  # Must be False — packing interferes with schema distractor token lengths
     dataloader_num_workers=4,
     dataloader_pin_memory=True,
     dataset_num_proc=20,
     # eval
     eval_strategy="steps",
-    eval_steps=50,
+    eval_steps=50 if dev_run else 200,
     per_device_eval_batch_size=8,
     gradient_checkpointing=True,
 )
@@ -126,6 +144,7 @@ training_arguments = SFTConfig(
 # 8. Initialize Trainer
 sql_callback = SQLEvalCallback(model, tokenizer, eval_dataset, formatting_prompts_func)
 perplexity_callback = PerplexityCallback()
+metrics_callback = TrainingMetricsCallback(batch_size, gradient_accumulation_steps, max_length)
 
 trainer = SFTTrainer(
     model=model,
@@ -133,21 +152,20 @@ trainer = SFTTrainer(
     eval_dataset=eval_dataset,
     peft_config=peft_config,
     formatting_func=formatting_prompts_func,
-    callbacks=[sql_callback, perplexity_callback],
+    callbacks=[sql_callback, perplexity_callback, metrics_callback],
     args=training_arguments,
 )
 
-# debug
-lengths = [len(tokenizer.encode(formatting_prompts_func(x))) for x in train_dataset.select(range(200))]
-print(f"max: {max(lengths)}")
-print(f"mean: {int(sum(lengths)/len(lengths))}")
-print(f"p95: {sorted(lengths)[int(len(lengths)*0.95)]}")
+# debug — always runs in DEV_RUN mode; otherwise set DEBUG_LENGTHS=1
+if dev_run or os.getenv("DEBUG_LENGTHS"):
+    lengths = [len(tokenizer.encode(formatting_prompts_func(x))) for x in train_dataset.select(range(200))]
+    print(f"max: {max(lengths)}")
+    print(f"mean: {int(sum(lengths)/len(lengths))}")
+    print(f"p95: {sorted(lengths)[int(len(lengths)*0.95)]}")
 
 # 9. Start Training
 print("Checking for checkpoints...")
-last_checkpoint = None
-if os.path.exists(output_dir) and os.listdir(output_dir):
-    last_checkpoint = True # Trainer will find the latest one automatically
+last_checkpoint = get_last_checkpoint(output_dir) if os.path.isdir(output_dir) else None
 
 print(f"GPU memory before training: {torch.cuda.memory_allocated()/1e9:.1f}GB")
 print(f"Starting training (Resume: {last_checkpoint})...")
