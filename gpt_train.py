@@ -139,7 +139,6 @@ last_checkpoint = None
 if os.path.exists(output_dir) and os.listdir(output_dir):
     last_checkpoint = True # Trainer will find the latest one automatically
 
-print(model.hf_device_map)
 print(f"Starting training (Resume: {last_checkpoint})...")
 trainer.train(resume_from_checkpoint=last_checkpoint)
 
