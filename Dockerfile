@@ -17,6 +17,7 @@ RUN . /venv/main/bin/activate && \
 
 # flash-attn last — long compile, separate layer so it doesn't invalidate above
 RUN . /venv/main/bin/activate && \
-    pip install flash-attn --no-build-isolation
+    TORCH_CUDA_ARCH_LIST="9.0" \
+    MAX_JOBS=2 pip install flash-attn --no-build-isolation
 
 WORKDIR /workspace

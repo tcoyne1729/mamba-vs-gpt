@@ -33,14 +33,16 @@ with open(run_id_path, "r") as f:
 dev_run = bool(os.environ.get('DEV_RUN'))
 run_type = "dev" if dev_run else "prod"
 
-lr = 5e-5
-lora_r = 16
+lr = 2e-5
+lora_r = 64
 n_distractors = 5
 batch_size = 8
 gradient_accumulation_steps = 4
 max_length = 2048
+eval_no = 200
 
 if dev_run:
+    eval_no = 50
     print("=== DEV RUN MODE ===")
     print("max_steps=200, eval_steps=50, logging_steps=10, DEBUG_LENGTHS=1")
 
@@ -74,7 +76,7 @@ split_datasets = raw_datasets["train"].train_test_split(test_size=0.05, seed=42)
 
 train_dataset = split_datasets["train"]
 eval_dataset = split_datasets["test"]
-eval_dataset = eval_dataset.select(range(50))  # just use 50 examples for speed
+eval_dataset = eval_dataset.select(range(eval_no))
 
 # 5. Load Tokenizer
 tokenizer = AutoTokenizer.from_pretrained(model_id, token=hf_token)
@@ -103,7 +105,7 @@ model.config.use_cache = False # Required for training
 # 6. LoRA Configuration (PEFT)
 peft_config = LoraConfig(
     r=lora_r,
-    lora_alpha=32,
+    lora_alpha=lora_r,
     target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
     lora_dropout=0.05,
     bias="none",
@@ -118,6 +120,7 @@ training_arguments = SFTConfig(
     optim="paged_adamw_32bit",
     learning_rate=lr,
     lr_scheduler_type="cosine",
+    warmup_ratio=0.05,
     logging_steps=10,
     num_train_epochs=1,
     max_steps=200 if dev_run else -1,
@@ -138,7 +141,7 @@ training_arguments = SFTConfig(
     eval_strategy="steps",
     eval_steps=50 if dev_run else 200,
     per_device_eval_batch_size=8,
-    gradient_checkpointing=True,
+    gradient_checkpointing=False,
 )
 
 # 8. Initialize Trainer
