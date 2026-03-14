@@ -63,7 +63,7 @@ wandb.init(
         "max_length": max_length,
         "n_distractors": n_distractors,
         "quantization": "nf4-4bit",
-        "attn_implementation": "sdpa",
+        "attn_implementation": "flash_attention_2",
         "packing": False,
     }
 )
@@ -94,7 +94,7 @@ model = AutoModelForCausalLM.from_pretrained(
     quantization_config=bnb_config,
     torch_dtype=torch.bfloat16,
     device_map={"": 0}, # This forces EVERYTHING onto GPU 0
-    attn_implementation="sdpa",
+    attn_implementation="flash_attention_2",
     trust_remote_code=True,
     token=hf_token,
 )
